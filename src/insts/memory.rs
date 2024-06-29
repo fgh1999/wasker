@@ -242,23 +242,25 @@ fn resolve_pointer<'a>(
     ptr_type: PointerType<'a>,
     environment: &mut Environment<'a, '_>,
 ) -> PointerValue<'a> {
-    // get base addr of linear memory from global variable
-    let linear_memory_offset_local = environment
+    // get base addr of the current linear memory from OS
+    let linear_memory_base_int = environment
         .builder
-        .build_load(
-            environment.inkwell_types.i8_ptr_type,
+        .build_call(
             environment
-                .linear_memory_offset_global
-                .expect("stack empty")
-                .as_pointer_value(),
-            "linm_local",
+                .fn_memory_base
+                .expect("should define fn_memory_base"),
+            &[],
+            "linear_memory_base_int",
         )
-        .into_pointer_value();
+        .try_as_basic_value()
+        .left()
+        .expect("error build_call memory_base");
+
     // calculate base + offset
     let dst_addr = unsafe {
         environment.builder.build_gep(
             environment.inkwell_types.i8_type,
-            linear_memory_offset_local,
+            linear_memory_base_int.into_pointer_value(),
             &[offset],
             "resolved_addr",
         )

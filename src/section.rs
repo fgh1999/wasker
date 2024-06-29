@@ -224,11 +224,14 @@ fn setup(environment: &mut Environment<'_, '_>) -> Result<()> {
     // Move position to wasker_init
     environment.builder.position_at_end(wasker_init_block);
 
-    // Define memory_base
-    let memory_base_fn_type = environment.inkwell_types.i8_ptr_type.fn_type(&[], false);
-    let memory_base_fn = environment
+    // Define memory_base OS Call
+    let fn_type_memory_base = environment.inkwell_types.i8_ptr_type.fn_type(&[], false);
+    let fn_memory_base = environment
         .module
-        .add_function("memory_base", memory_base_fn_type, None);
+        .add_function("memory_base", fn_type_memory_base, None);
+    environment.fn_memory_base = Some(fn_memory_base);
+
+    // Define memory_grow OS Call
     let fn_type_memory_grow = environment
         .inkwell_types
         .i32_type
@@ -238,34 +241,13 @@ fn setup(environment: &mut Environment<'_, '_>) -> Result<()> {
         .add_function("memory_grow", fn_type_memory_grow, None);
     environment.fn_memory_grow = Some(fn_memory_grow);
 
-    // Define Linear memory base as Global
-    let linear_memory_offset_global = environment.module.add_global(
-        environment.inkwell_types.i8_ptr_type,
-        Some(AddressSpace::default()),
-        "linm_global",
-    );
-    linear_memory_offset_global
-        .set_initializer(&environment.inkwell_types.i8_ptr_type.const_zero());
-
     // Call memory_base
-    let linear_memory_offset = environment
+    let _ = environment
         .builder
-        .build_call(memory_base_fn, &[], "linear_memory_offset")
+        .build_call(fn_memory_base, &[], "linear_memory_offset")
         .try_as_basic_value()
         .left()
         .expect("error build_call memory_base");
-    environment.builder.build_store::<PointerValue>(
-        linear_memory_offset_global.as_pointer_value(),
-        linear_memory_offset.into_pointer_value(),
-    );
-    environment.linear_memory_offset_global = Some(linear_memory_offset_global);
-
-    let linear_memory_offset_int = environment.builder.build_ptr_to_int(
-        linear_memory_offset.into_pointer_value(),
-        environment.inkwell_types.i64_type,
-        "linm_int",
-    );
-    environment.linear_memory_offset_int = Some(linear_memory_offset_int);
 
     Ok(())
 }
@@ -664,10 +646,29 @@ fn parse_data_section(
                     .inkwell_types
                     .i64_type
                     .const_int(offset as u64, false);
+
+                // Memcpy from data to the head of Linear Memory
+                let linear_memory_base_ptr = environment
+                    .builder
+                    .build_call(
+                        environment
+                            .fn_memory_base
+                            .expect("should define fn_memory_base"),
+                        &[],
+                        "linear_memory_base_ptr",
+                    )
+                    .try_as_basic_value()
+                    .left()
+                    .expect("error build_call memory_base")
+                    .into_pointer_value();
+                let linear_memory_base_int = environment.builder.build_ptr_to_int(
+                    linear_memory_base_ptr,
+                    environment.inkwell_types.i64_type,
+                    "linear_memory_base_int",
+                );
+
                 let dest_int = environment.builder.build_int_add(
-                    environment
-                        .linear_memory_offset_int
-                        .expect("should define linear_memory_offset_int"),
+                    linear_memory_base_int,
                     offset_int,
                     "dest_int",
                 );
@@ -677,7 +678,6 @@ fn parse_data_section(
                     "dest_ptr",
                 );
 
-                // Memcpy from data to Linear Memory
                 environment
                     .builder
                     .build_memcpy(

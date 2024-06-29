@@ -522,25 +522,29 @@ pub(super) fn gen_call(environment: &mut Environment<'_, '_>, function_index: u3
     if fn_called.get_name().to_str() == anyhow::Result::Ok("print") {
         args.push(environment.pop_and_load().into());
 
-        let arg0 = environment.pop_and_load();
-        let linear_memory_offset_local = environment.builder.build_load(
-            environment.inkwell_types.i8_ptr_type,
-            environment
-                .linear_memory_offset_global
-                .expect("should define linet_memory_offset_global")
-                .as_pointer_value(),
-            "linm_local",
-        );
-        let linear_memory_offset_int = environment.builder.build_ptr_to_int(
-            linear_memory_offset_local.into_pointer_value(),
+        let linear_memory_base_int = environment
+            .builder
+            .build_call(
+                environment
+                    .fn_memory_base
+                    .expect("should define fn_memory_base"),
+                &[],
+                "linear_memory_base_int",
+            )
+            .try_as_basic_value()
+            .left()
+            .expect("error build_call memory_base");
+        let linear_memory_base_int = environment.builder.build_ptr_to_int(
+            linear_memory_base_int.into_pointer_value(),
             environment.inkwell_types.i64_type,
-            "linm_int",
+            "linear_memory_base_int",
         );
-        let offset = arg0.into_int_value();
+
+        let offset = environment.pop_and_load().into_int_value();
         let translated_address =
             environment
                 .builder
-                .build_int_add(linear_memory_offset_int, offset, "transed_addr");
+                .build_int_add(linear_memory_base_int, offset, "transed_addr");
         args.push(translated_address.into());
     } else {
         for _ in 0..fn_called.count_params() {

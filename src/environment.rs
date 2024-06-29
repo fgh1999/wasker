@@ -7,7 +7,7 @@ use inkwell::{
     context::Context,
     module::Module,
     types::{BasicTypeEnum, FunctionType},
-    values::{BasicValueEnum, FunctionValue, GlobalValue, IntValue},
+    values::{BasicValueEnum, FunctionValue, GlobalValue},
 };
 use std::path::Path;
 
@@ -62,11 +62,6 @@ pub struct Environment<'a, 'b> {
     pub wasker_init_block: Option<BasicBlock<'a>>,
     pub wasker_main_block: Option<BasicBlock<'a>>,
 
-    pub linear_memory_offset_global: Option<GlobalValue<'a>>,
-
-    // Caution: Can only used in wasker_init
-    pub linear_memory_offset_int: Option<IntValue<'a>>,
-
     pub start_function_idx: Option<u32>,
 
     pub unreachable_depth: u32,
@@ -76,6 +71,7 @@ pub struct Environment<'a, 'b> {
     pub global_table: Option<GlobalValue<'a>>,
 
     // Memory
+    pub fn_memory_base: Option<FunctionValue<'a>>,
     pub global_memory_size: Option<GlobalValue<'a>>,
     pub fn_memory_grow: Option<FunctionValue<'a>>,
 }
@@ -108,14 +104,13 @@ impl<'a, 'b> Environment<'a, 'b> {
             control_frames: Vec::new(),
             wasker_init_block: None,
             wasker_main_block: None,
-            linear_memory_offset_global: None,
-            linear_memory_offset_int: None,
             start_function_idx: None,
             unreachable_depth: 0,
             unreachable_reason: UnreachableReason::Reachable,
             global_table: None,
             global_memory_size: None,
             fn_memory_grow: None,
+            fn_memory_base: None,
         }
     }
 

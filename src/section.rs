@@ -31,6 +31,7 @@ pub fn translate_module(mut data: &[u8], environment: &mut Environment<'_, '_>) 
 
     // Parse Wasm binary and generate LLVM IR
     let mut code_section_data: Option<&[u8]> = None;
+    let mut data_section: Option<_> = None;
     let mut elements_section: Option<SectionLimited<'_, Element<'_>>> = None;
 
     let mut parser = Parser::new(0);
@@ -74,7 +75,8 @@ pub fn translate_module(mut data: &[u8], environment: &mut Environment<'_, '_>) 
                 elements_section = Some(elements);
             }
             Payload::DataSection(datas) => {
-                parse_data_section(datas, environment)?;
+                // parse after the first mem_grow(i.e., after parse memory section)
+                data_section = Some(datas);
             }
             Payload::CodeSectionEntry(_) => {
                 // parse later
@@ -103,6 +105,9 @@ pub fn translate_module(mut data: &[u8], environment: &mut Environment<'_, '_>) 
                 log::warn!("Unimplemented Section. Run with `RUST_LOG=debug` environment variable for more info.");
             }
         }
+    }
+    if let Some(datas) = data_section {
+        parse_data_section(datas, environment)?;
     }
 
     define_functions(environment)?;

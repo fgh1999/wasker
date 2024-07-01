@@ -20,8 +20,8 @@ unsafe fn alloc_memory(block_num: usize) -> *mut u8 {
 }
 
 #[no_mangle]
-pub extern "C" fn memory_base() -> i32 {
-    unsafe { get_memory_base() as i32 }
+pub extern "C" fn memory_base() -> usize {
+    unsafe { get_memory_base() as usize }
 }
 
 #[no_mangle]

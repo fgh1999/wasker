@@ -11,7 +11,7 @@ use inkwell::{
 };
 use std::path::Path;
 
-use crate::inkwell::{InkwellInsts, InkwellTypes};
+use crate::inkwell::{init_inkwell, InkwellInsts, InkwellTypes};
 use crate::insts::control::{ControlFrame, UnreachableReason};
 
 pub enum Global<'a> {
@@ -30,7 +30,7 @@ pub struct Environment<'a, 'b> {
 
     // Inkwell code generator
     pub context: &'a Context,
-    pub module: &'b Module<'a>,
+    pub module: Module<'a>,
     pub builder: Builder<'a>,
 
     // Set of primitive types of inkwell
@@ -77,14 +77,11 @@ pub struct Environment<'a, 'b> {
 }
 
 impl<'a, 'b> Environment<'a, 'b> {
-    pub fn new(
-        output_file: &'b Path,
-        context: &'a Context,
-        module: &'b Module<'a>,
-        builder: Builder<'a>,
-        inkwell_types: InkwellTypes<'a>,
-        inkwell_insts: InkwellInsts<'a>,
-    ) -> Self {
+    pub fn new(output_file: &'b Path, context: &'a Context) -> Self {
+        let module = context.create_module("wasker_module");
+        let builder = context.create_builder();
+        let (inkwell_types, inkwell_insts) = init_inkwell(context, &module);
+
         Self {
             output_file,
             context,

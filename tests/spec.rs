@@ -35,7 +35,11 @@ fn _run_spec_test(testname: &str) {
                     input_file: "tmp.wasm".into(),
                     output_file: "/tmp/wasm.o".into(),
                 };
-                compiler::compile_wasm(&module_binary, &args).expect("compile failed");
+                let context = inkwell::context::Context::create();
+                let mut env =
+                    wasker::environment::Environment::new(args.output_file.as_path(), &context);
+                compiler::compile_wasm_with_default_pass(&module_binary, &mut env)
+                    .expect("compile failed");
             }
             _ => {
                 // TODO: support assertion

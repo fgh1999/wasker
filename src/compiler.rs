@@ -1,7 +1,6 @@
 //! `compiler` is the root module of Wasker compiler.
 
 use crate::environment::Environment;
-use crate::inkwell::init_inkwell;
 use crate::section::translate_module;
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
@@ -18,38 +17,46 @@ pub struct Args {
 }
 
 /// Receive a path to a Wasm binary or WAT and compile it into ELF binary.
-pub fn compile_wasm_from_file(args: &Args) -> Result<()> {
+pub fn compile_wasm_from_file(
+    Args {
+        input_file,
+        output_file,
+    }: &Args,
+) -> Result<()> {
     // Load bytes as either *.wat or *.wasm
-    log::info!("input: {}", args.input_file.as_path().display());
-    let buf: Vec<u8> = std::fs::read(&args.input_file).expect("error read file");
+    log::info!("input: {}", input_file.as_path().display());
+    let buf: Vec<u8> = std::fs::read(input_file).expect("error read file");
 
     // If input is *.wat, convert it into *wasm
     // If input is *.wasm, do nothing
     let wasm = wat::parse_bytes(&buf).expect("error translate wat");
     assert!(wasm.starts_with(b"\0asm"));
 
-    compile_wasm(&wasm, args)
+    // Prepare inkwell (Rust-wrapper of LLVM) instances
+    let context = context::Context::create();
+    let mut env = Environment::new(output_file.as_path(), &context);
+
+    compile_wasm_with_default_pass(&wasm, &mut env)?;
+    // output LLVM IR to native ELF
+    output_elf(env.output_file, &env.module).context("error output_elf")
 }
 
 /// Receive a Wasm binary and compile it into ELF binary.
-pub fn compile_wasm(wasm: &[u8], args: &Args) -> Result<()> {
-    // Prepare inkwell (Rust-wrapper of LLVM) instances
-    let context = context::Context::create();
-    let module = context.create_module("wasker_module");
-    let builder = context.create_builder();
-    let (inkwell_types, inkwell_insts) = init_inkwell(&context, &module);
-    let mut environment = Environment::new(
-        args.output_file.as_path(),
-        &context,
-        &module,
-        builder,
-        inkwell_types,
-        inkwell_insts,
-    );
+pub fn compile_wasm(
+    wasm: &[u8],
+    env: &mut Environment,
+    run_pass_on_module: impl FnOnce(&Module),
+) -> Result<()> {
+    translate_module(wasm, env)?; // translate wasm to LLVM IR
+    run_pass_on_module(&env.module);
+    Ok(())
+}
 
-    // translate wasm to LLVM IR
-    translate_module(wasm, &mut environment)?;
+pub fn compile_wasm_with_default_pass(wasm: &[u8], env: &mut Environment) -> Result<()> {
+    compile_wasm(wasm, env, run_pass_on)
+}
 
+fn run_pass_on(module: &Module) {
     let pass_manager: PassManager<Module<'_>> = PassManager::create(());
     pass_manager.add_type_based_alias_analysis_pass();
     pass_manager.add_sccp_pass();
@@ -78,22 +85,15 @@ pub fn compile_wasm(wasm: &[u8], args: &Args) -> Result<()> {
     pass_manager.add_reassociate_pass();
     pass_manager.add_cfg_simplification_pass();
     pass_manager.add_early_cse_pass();
-    pass_manager.run_on(&module);
-
-    // output LLVM IR to native ELF
-    output_elf(environment).context("error output_elf")?;
-
-    log::info!("Compile success");
-    Ok(())
+    pass_manager.run_on(module);
 }
 
-fn output_elf(environment: Environment) -> Result<()> {
-    let obj_path = path::Path::new(environment.output_file);
+fn output_elf(output_file: &path::Path, module: &Module) -> Result<()> {
+    let obj_path = path::Path::new(output_file);
     let ll_path = obj_path.with_extension("ll");
 
     log::info!("write to {}", ll_path.display());
-    environment
-        .module
+    module
         .print_to_file(ll_path.to_str().expect("error ll_path"))
         .map_err(|e| anyhow!(e.to_string()))
         .context("fail print_to_file")?;
@@ -102,7 +102,7 @@ fn output_elf(environment: Environment) -> Result<()> {
     get_host_target_machine()
         .expect("error get_host_target_machine")
         .write_to_file(
-            environment.module,
+            module,
             targets::FileType::Object,
             std::path::Path::new(obj_path.to_str().expect("error obj_path")),
         )
@@ -126,7 +126,7 @@ fn get_host_target_machine() -> Result<targets::TargetMachine, String> {
 
     let opt_level = inkwell::OptimizationLevel::Aggressive;
     let reloc_mode = RelocMode::Default;
-    let code_model = CodeModel::Default;
+    let code_model = CodeModel::Kernel;
 
     target
         .create_target_machine(

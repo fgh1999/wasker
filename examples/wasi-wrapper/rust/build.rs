@@ -1,4 +1,5 @@
 use std::{path::Path, process::Command};
+use std::fs::File;
 
 fn path_to_str(path: &Path) -> &str {
     path.as_os_str().to_str().unwrap()
@@ -22,10 +23,8 @@ fn main() {
         .expect("failed to compile target into obj");
 
     let target_lib_name = format!("lib{}.a", target_name);
-    Command::new("ar")
-        .args(["rcs", &target_lib_name, &target_obj_name])
-        .status()
-        .expect("failed to convert obj into lib");
+    let mut builder = ar::Builder::new(File::create(&target_lib_name).unwrap());
+    builder.append_path(&target_obj_name).expect("failed to convert obj into lib");
 
     println!("cargo:rustc-link-arg=-no-pie");
     println!("cargo:rustc-link-search=native={}", path_to_str(wasm_path));

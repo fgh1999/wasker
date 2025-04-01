@@ -2,7 +2,7 @@
 
 use crate::environment::Environment;
 use crate::section::translate_module;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use inkwell::{context, module::Module, passes::PassManager, targets};
 use std::path;
@@ -34,11 +34,17 @@ pub fn compile_wasm_from_file(
 
     // Prepare inkwell (Rust-wrapper of LLVM) instances
     let context = context::Context::create();
-    let mut env = Environment::new(output_file.as_path(), &context);
+    let mut env = Environment::new(&context);
+    env.output_file(output_file.as_path());
 
     compile_wasm_with_default_pass(&wasm, &mut env)?;
     // output LLVM IR to native ELF
-    output_elf(env.output_file, &env.module).context("error output_elf")
+    match env.output_file {
+        None => {
+            bail!("output_file is None");
+        }
+        Some(out) => output_elf(out, &env.module).context("error output_elf"),
+    }
 }
 
 /// Receive a Wasm binary and compile it into ELF binary.

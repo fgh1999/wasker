@@ -36,8 +36,8 @@ fn _run_spec_test(testname: &str) {
                     output_file: "/tmp/wasm.o".into(),
                 };
                 let context = inkwell::context::Context::create();
-                let mut env =
-                    wasker::environment::Environment::new(args.output_file.as_path(), &context);
+                let mut env = wasker::environment::Environment::new(&context);
+                env.output_file(args.output_file.as_path());
                 compiler::compile_wasm_with_default_pass(&module_binary, &mut env)
                     .expect("compile failed");
             }

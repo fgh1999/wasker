@@ -1,10 +1,10 @@
 //! `environment` holds the state of the compiler.
 
 use anyhow::{bail, Result};
+pub use inkwell::context::Context;
 use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
-    context::Context,
     module::Module,
     types::{BasicTypeEnum, FunctionType},
     values::{BasicValueEnum, FunctionValue, GlobalValue},
@@ -26,7 +26,7 @@ pub enum Global<'a> {
 
 pub struct Environment<'a, 'b> {
     // Output dir
-    pub output_file: &'b Path,
+    pub output_file: Option<&'b Path>,
 
     // Inkwell code generator
     pub context: &'a Context,
@@ -77,13 +77,13 @@ pub struct Environment<'a, 'b> {
 }
 
 impl<'a, 'b> Environment<'a, 'b> {
-    pub fn new(output_file: &'b Path, context: &'a Context) -> Self {
+    pub fn new(context: &'a Context) -> Self {
         let module = context.create_module("wasker_module");
         let builder = context.create_builder();
         let (inkwell_types, inkwell_insts) = init_inkwell(context, &module);
 
         Self {
-            output_file,
+            output_file: None,
             context,
             module,
             builder,
@@ -109,6 +109,10 @@ impl<'a, 'b> Environment<'a, 'b> {
             fn_memory_grow: None,
             fn_memory_base: None,
         }
+    }
+
+    pub fn output_file(&mut self, output_file: &'b Path) {
+        self.output_file.replace(output_file);
     }
 
     /// Restore the stack to the specified size.

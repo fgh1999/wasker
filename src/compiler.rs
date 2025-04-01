@@ -117,7 +117,7 @@ fn output_elf(output_file: &path::Path, module: &Module) -> Result<()> {
     Ok(())
 }
 
-fn get_host_target_machine() -> Result<targets::TargetMachine, String> {
+pub fn get_host_target_machine() -> Result<targets::TargetMachine, String> {
     use targets::*;
 
     Target::initialize_native(&InitializationConfig::default())

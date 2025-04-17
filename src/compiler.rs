@@ -132,7 +132,7 @@ pub fn get_host_target_machine() -> Result<targets::TargetMachine, String> {
 
     let opt_level = inkwell::OptimizationLevel::Aggressive;
     let reloc_mode = RelocMode::Default;
-    let code_model = CodeModel::Kernel;
+    let code_model = CodeModel::Default;
 
     target
         .create_target_machine(

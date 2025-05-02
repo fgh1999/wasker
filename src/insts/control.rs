@@ -523,17 +523,11 @@ pub(super) fn gen_call(environment: &mut Environment<'_, '_>, function_index: u3
         args.push(environment.pop_and_load().into());
 
         let linear_memory_base_int = environment
-            .builder
-            .build_call(
-                environment
-                    .fn_memory_base
-                    .expect("should define fn_memory_base"),
-                &[],
-                "linear_memory_base_int",
-            )
-            .try_as_basic_value()
-            .left()
-            .expect("error build_call memory_base");
+            .memory_manager
+            .as_ref()
+            .expect("should define memory_manager")
+            .global_memory
+            .load_base_addr(&environment.builder, &environment.inkwell_types);
         let linear_memory_base_int = environment.builder.build_ptr_to_int(
             linear_memory_base_int.into_pointer_value(),
             environment.inkwell_types.i64_type,

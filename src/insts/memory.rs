@@ -10,14 +10,12 @@ use inkwell::{
 use wasmparser::MemArg;
 
 pub fn memory_size(environment: &mut Environment<'_, '_>) -> Result<()> {
-    let size = environment.builder.build_load(
-        environment.inkwell_types.i32_type,
-        environment
-            .global_memory_size
-            .expect("should defined global_memory_size")
-            .as_pointer_value(),
-        "mem_size",
-    );
+    let size = environment
+        .memory_manager
+        .as_ref()
+        .expect("should define memory_manager")
+        .global_memory
+        .load_size(&environment.builder, &environment.inkwell_types);
     environment.stack.push(size);
     Ok(())
 }
@@ -25,37 +23,19 @@ pub fn memory_size(environment: &mut Environment<'_, '_>) -> Result<()> {
 pub fn memory_grow(environment: &mut Environment<'_, '_>) -> Result<()> {
     // Request to OS
     let delta = environment.stack.pop().expect("stack empty");
-    environment.builder.build_call(
-        environment
-            .fn_memory_grow
-            .expect("shold define fn_memory_grow"),
-        &[delta.into()],
-        "memory_grow",
-    );
+    let page_size_delta = delta.into_int_value();
 
+    let mem_mgr = &environment
+        .memory_manager
+        .as_ref()
+        .expect("should define memory_manager");
     // Load old memory size
-    let size_old = environment.builder.build_load(
-        environment.inkwell_types.i32_type,
-        environment
-            .global_memory_size
-            .expect("should define global_memory_size")
-            .as_pointer_value(),
-        "mem_size_old",
-    );
-    environment.stack.push(size_old);
+    let old_size = mem_mgr
+        .global_memory
+        .load_size(&environment.builder, &environment.inkwell_types);
+    mem_mgr.build_call_fn_memory_grow(&environment.builder, page_size_delta);
+    environment.stack.push(old_size);
 
-    // Update new memory size
-    let size_new =
-        environment
-            .builder
-            .build_int_add(size_old.into_int_value(), delta.into_int_value(), "");
-    environment.builder.build_store(
-        environment
-            .global_memory_size
-            .expect("shold define global_memory_size")
-            .as_pointer_value(),
-        size_new,
-    );
     Ok(())
 }
 
@@ -244,17 +224,11 @@ fn resolve_pointer<'a>(
 ) -> PointerValue<'a> {
     // get base addr of the current linear memory from OS
     let linear_memory_base_int = environment
-        .builder
-        .build_call(
-            environment
-                .fn_memory_base
-                .expect("should define fn_memory_base"),
-            &[],
-            "linear_memory_base_int",
-        )
-        .try_as_basic_value()
-        .left()
-        .expect("error build_call memory_base");
+        .memory_manager
+        .as_ref()
+        .expect("should define memory_manager")
+        .global_memory
+        .load_base_addr(&environment.builder, &environment.inkwell_types);
 
     // calculate base + offset
     let dst_addr = unsafe {

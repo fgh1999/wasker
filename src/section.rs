@@ -15,8 +15,8 @@ use wasmparser::{
     ValType,
 };
 
-use crate::inkwell::InkwellTypes;
 use crate::insts::control;
+use crate::{environment::MemoryManager, inkwell::InkwellTypes};
 use crate::{
     environment::{Environment, Global},
     insts::parse_instruction,
@@ -207,7 +207,6 @@ fn define_functions(environment: &mut Environment<'_, '_>) -> Result<()> {
 }
 
 // Setup wasker_main and wasker_init
-// Create these block then call memory_base()
 fn setup(environment: &mut Environment<'_, '_>) -> Result<()> {
     // Define wasker_main function
     let wasker_main_fn_type = environment.inkwell_types.void_type.fn_type(&[], false);
@@ -228,32 +227,6 @@ fn setup(environment: &mut Environment<'_, '_>) -> Result<()> {
 
     // Move position to wasker_init
     environment.builder.position_at_end(wasker_init_block);
-
-    // Define memory_base OS Call
-    let fn_type_memory_base = environment.inkwell_types.i8_ptr_type.fn_type(&[], false);
-    let fn_memory_base = environment
-        .module
-        .add_function("memory_base", fn_type_memory_base, None);
-    environment.fn_memory_base = Some(fn_memory_base);
-
-    // Define memory_grow OS Call
-    let fn_type_memory_grow = environment
-        .inkwell_types
-        .i32_type
-        .fn_type(&[environment.inkwell_types.i32_type.into()], false);
-    let fn_memory_grow = environment
-        .module
-        .add_function("memory_grow", fn_type_memory_grow, None);
-    environment.fn_memory_grow = Some(fn_memory_grow);
-
-    // Call memory_base
-    let _ = environment
-        .builder
-        .build_call(fn_memory_base, &[], "linear_memory_offset")
-        .try_as_basic_value()
-        .left()
-        .expect("error build_call memory_base");
-
     Ok(())
 }
 
@@ -372,7 +345,7 @@ fn parse_function_section(
 
 fn parse_memory_section(
     memories: MemorySectionReader,
-    environment: &mut Environment<'_, '_>,
+    env: &mut Environment<'_, '_>,
 ) -> Result<()> {
     // Declare memory size as a global value
     let mut size: u32 = 0;
@@ -381,31 +354,10 @@ fn parse_memory_section(
         size += memory.initial as u32;
         log::debug!("- memory[{}] = {:?}", i, memory);
     }
-    let global = environment.module.add_global(
-        environment.inkwell_types.i32_type,
-        Some(AddressSpace::default()),
-        "global_mem_size",
-    );
-    global.set_initializer(
-        &environment
-            .inkwell_types
-            .i32_type
-            .const_int(size as u64, false),
-    );
-    environment.global_memory_size = Some(global);
 
-    // malloc memory from OS
-    environment.builder.build_call(
-        environment
-            .fn_memory_grow
-            .expect("should define memory_grow"),
-        &[environment
-            .inkwell_types
-            .i32_type
-            .const_int(size as u64, false)
-            .into()],
-        "linear_memory_offset",
-    );
+    let mem_mgr =
+        MemoryManager::init_within(&env.module, &env.builder, &env.inkwell_types, size as u64);
+    env.memory_manager = Some(mem_mgr);
     Ok(())
 }
 
@@ -654,17 +606,11 @@ fn parse_data_section(
 
                 // Memcpy from data to the head of Linear Memory
                 let linear_memory_base_ptr = environment
-                    .builder
-                    .build_call(
-                        environment
-                            .fn_memory_base
-                            .expect("should define fn_memory_base"),
-                        &[],
-                        "linear_memory_base_ptr",
-                    )
-                    .try_as_basic_value()
-                    .left()
-                    .expect("error build_call memory_base")
+                    .memory_manager
+                    .as_ref()
+                    .expect("should define memory_manager")
+                    .global_memory
+                    .load_base_addr(&environment.builder, &environment.inkwell_types)
                     .into_pointer_value();
                 let linear_memory_base_int = environment.builder.build_ptr_to_int(
                     linear_memory_base_ptr,

@@ -11,6 +11,7 @@ use inkwell::{
     AddressSpace,
 };
 use std::path::Path;
+use wasmparser::MemArg;
 
 use crate::inkwell::{init_inkwell, InkwellInsts, InkwellTypes};
 use crate::insts::control::{ControlFrame, UnreachableReason};
@@ -79,6 +80,8 @@ pub struct MemoryManager<'env> {
     pub fn_memory_base: FunctionValue<'env>,
     /// An external function that grows the memory by a given wasm page size.
     pub fn_memory_grow: FunctionValue<'env>,
+    /// An external function that grows the memory by a given page size.
+    pub fn_memory_error_handler: FunctionValue<'env>,
 
     /// A global variable that caches meta data of the Wasm memory.
     /// It can only be modified after the host call `memory_grow`.
@@ -103,6 +106,14 @@ impl<'env> MemoryManager<'env> {
             wasm_mem_page_size_type.fn_type(&[wasm_mem_page_size_type.into()], false);
         let fn_memory_grow = module.add_function("memory_grow", fn_type_memory_grow, None);
 
+        // Define external memory_error_handler OS Call in module
+        let wasm_mem_errno_type = GlobalMemoryMeta::wasm_mem_errno_type(types);
+        let fn_type_memory_error_handler = types
+            .void_type
+            .fn_type(&[wasm_mem_errno_type.into()], false);
+        let fn_memory_error_handler =
+            module.add_function("memory_error_handler", fn_type_memory_error_handler, None);
+
         let global_memory = GlobalMemoryMeta::init_within(module, types);
         // malloc the initial memory from OS
         let page_size_int_val = wasm_mem_page_size_type.const_int(init_mem_size, false);
@@ -113,6 +124,7 @@ impl<'env> MemoryManager<'env> {
         Self {
             fn_memory_base,
             fn_memory_grow,
+            fn_memory_error_handler,
             global_memory,
         }
     }
@@ -150,6 +162,47 @@ impl<'env> MemoryManager<'env> {
         self.global_memory.store_size(builder, new_page_size);
         new_page_size
     }
+
+    pub fn check_mem<'b>(&self, memarg: &MemArg, env: &Environment<'env, 'b>) {
+        let memarg_offset = env.inkwell_types.i64_type.const_int(memarg.offset, false);
+
+        let wasm_page_size = self
+            .global_memory
+            .load_size(&env.builder, &env.inkwell_types)
+            .into_int_value();
+        let max_offet = env.builder.build_int_mul(
+            wasm_page_size,
+            env.inkwell_types.i64_type.const_int(1u64 << 16, false),
+            "max_offset",
+        );
+
+        let cond = env.builder.build_int_compare(
+            inkwell::IntPredicate::UGE,
+            memarg_offset,
+            max_offet,
+            "out of boundary",
+        );
+
+        let then_block = env
+            .context
+            .append_basic_block(env.function_list[env.current_function_idx as usize], "then");
+        let merge_block = env.context.append_basic_block(
+            env.function_list[env.current_function_idx as usize],
+            "merge",
+        );
+
+        env.builder
+            .build_conditional_branch(cond, then_block, merge_block);
+        env.builder.position_at_end(then_block);
+        let mem_err_type = GlobalMemoryMeta::wasm_mem_errno_type(&env.inkwell_types);
+        env.builder.build_call(
+            self.fn_memory_error_handler,
+            &[mem_err_type.const_zero().into()],
+            "out of boundary handler",
+        );
+        env.builder.build_unreachable();
+        env.builder.position_at_end(merge_block);
+    }
 }
 
 pub struct GlobalMemoryMeta<'env> {
@@ -171,6 +224,7 @@ impl<'env> GlobalMemoryMeta<'env> {
             "global_memory_size",
         );
         size.set_initializer(&wasm_mem_page_size_type.const_zero());
+        // let size_value = wasm_mem_page_size_type.const_zero();
 
         let wasm_mem_base_addr_type = Self::wasm_mem_base_addr_type(types);
         let base_addr = module.add_global(
@@ -190,6 +244,9 @@ impl<'env> GlobalMemoryMeta<'env> {
         types: &InkwellTypes<'env>,
     ) -> inkwell::types::PointerType<'env> {
         types.i8_ptr_type
+    }
+    const fn wasm_mem_errno_type(types: &InkwellTypes<'env>) -> inkwell::types::IntType<'env> {
+        types.i8_type
     }
 
     /// Updates new memory page size

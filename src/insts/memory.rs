@@ -112,11 +112,11 @@ pub fn generate_load<'a>(
     require_extend: bool,
     environment: &mut Environment<'a, '_>,
 ) -> Result<()> {
-    environment
-        .memory_manager
-        .as_ref()
-        .expect("should define memory_manager")
-        .check_mem(memarg, environment);
+    // environment
+    //     .memory_manager
+    //     .as_ref()
+    //     .expect("should define memory_manager")
+    //     .check_mem(memarg, environment);
 
     // offset
     let address_operand = environment
@@ -180,11 +180,11 @@ pub fn generate_store<'a>(
     require_narrow: bool,
     environment: &mut Environment<'a, '_>,
 ) -> Result<()> {
-    environment
-        .memory_manager
-        .as_ref()
-        .expect("should define memory_manager")
-        .check_mem(memarg, environment);
+    // environment
+    //     .memory_manager
+    //     .as_ref()
+    //     .expect("should define memory_manager")
+    //     .check_mem(memarg, environment);
 
     // value
     let value = environment.stack.pop().expect("stack empty");

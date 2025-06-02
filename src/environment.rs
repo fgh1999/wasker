@@ -5,7 +5,7 @@ pub use inkwell::context::Context;
 use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
-    module::Module,
+    module::{Linkage, Module},
     types::{BasicTypeEnum, FunctionType},
     values::{BasicValueEnum, FunctionValue, GlobalValue, IntValue},
     AddressSpace,
@@ -83,6 +83,8 @@ pub struct MemoryManager<'env> {
     /// An external function that grows the memory by a given page size.
     pub fn_memory_error_handler: FunctionValue<'env>,
 
+    pub fn_memory_bound_checker: FunctionValue<'env>,
+
     /// A global variable that caches meta data of the Wasm memory.
     /// It can only be modified after the host call `memory_grow`.
     pub global_memory: GlobalMemoryMeta<'env>,
@@ -90,6 +92,7 @@ pub struct MemoryManager<'env> {
 
 impl<'env> MemoryManager<'env> {
     pub fn init_within(
+        context: &'env Context,
         module: &Module<'env>,
         builder: &Builder<'env>,
         types: &InkwellTypes<'env>,
@@ -121,10 +124,24 @@ impl<'env> MemoryManager<'env> {
         global_memory.store_size(builder, page_size_int_val);
         global_memory.fetch_and_store_base_addr(builder, fn_memory_base);
 
+        // [wasm_page_size, mem_offset_in_bytes] -> void
+        let mem_bnd_checker_ty = types.void_type.fn_type(&[wasm_mem_page_size_type.into(), types.i64_type.into()], false);
+        let fn_memory_bound_checker = module.add_function(
+            "memory_bound_checker",
+            mem_bnd_checker_ty,
+            None);
+
+        // let then_block = context.append_basic_block(fn_memory_bound_checker, "then");
+        // let merge_block = context.append_basic_block(fn_memory_bound_checker,"merge");
+
+
+
+
         Self {
             fn_memory_base,
             fn_memory_grow,
             fn_memory_error_handler,
+            fn_memory_bound_checker,
             global_memory,
         }
     }
@@ -176,32 +193,38 @@ impl<'env> MemoryManager<'env> {
             "max_offset",
         );
 
-        let cond = env.builder.build_int_compare(
-            inkwell::IntPredicate::UGE,
-            memarg_offset,
-            max_offet,
-            "out of boundary",
-        );
+        // let cond = env.builder.build_int_compare(
+        //     inkwell::IntPredicate::UGE,
+        //     memarg_offset,
+        //     max_offet,
+        //     "out of boundary",
+        // );
 
-        let then_block = env
-            .context
-            .append_basic_block(env.function_list[env.current_function_idx as usize], "then");
-        let merge_block = env.context.append_basic_block(
-            env.function_list[env.current_function_idx as usize],
-            "merge",
-        );
+        // let tmp_fn_ty = env.inkwell_types.void_type.fn_type(&[], false);
+        // let tmp_fn = env
+        //     .module
+        //     .add_function("tmp_fn", tmp_fn_ty, Some(Linkage::Common));
 
-        env.builder
-            .build_conditional_branch(cond, then_block, merge_block);
-        env.builder.position_at_end(then_block);
-        let mem_err_type = GlobalMemoryMeta::wasm_mem_errno_type(&env.inkwell_types);
-        env.builder.build_call(
-            self.fn_memory_error_handler,
-            &[mem_err_type.const_zero().into()],
-            "out of boundary handler",
-        );
-        env.builder.build_unreachable();
-        env.builder.position_at_end(merge_block);
+        // let then_block = env
+        //     .context
+        //     .append_basic_block(env.function_list[env.current_function_idx as usize], "then");
+        // let merge_block = env.context.append_basic_block(
+        //     env.function_list[env.current_function_idx as usize],
+        //     "merge",
+        // );
+
+        // env.builder
+        //     .build_conditional_branch(cond, then_block, merge_block);
+        // env.builder.position_at_end(then_block);
+        // let mem_err_type = GlobalMemoryMeta::wasm_mem_errno_type(&env.inkwell_types);
+        // env.builder.build_call(
+        //     self.fn_memory_error_handler,
+        //     &[mem_err_type.const_zero().into()],
+        //     "out of boundary handler",
+        // );
+        // // env.builder.build_unreachable();
+        // env.builder.build_unconditional_branch(merge_block);
+        // env.builder.position_at_end(merge_block);
     }
 }
 

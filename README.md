@@ -122,6 +122,12 @@ tar -xvf /tmp/llvm-15.0.0.tar.xz -C dependencies/llvm
 export LLVM_SYS_150_PREFIX=$PWD/dependencies/llvm/clang+llvm-15.0.0-aarch64-linux-gnu
 ```
 
+### Install LibFFI
+
+```
+apt install libffi-dev
+```
+
 ### Run Wasker
 ```
 cargo run helloworld.wat

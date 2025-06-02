@@ -356,7 +356,7 @@ fn parse_memory_section(
     }
 
     let mem_mgr =
-        MemoryManager::init_within(&env.module, &env.builder, &env.inkwell_types, size as u64);
+        MemoryManager::init_within(&env.context, &env.module, &env.builder, &env.inkwell_types, size as u64);
     env.memory_manager = Some(mem_mgr);
     Ok(())
 }

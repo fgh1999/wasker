@@ -303,7 +303,7 @@ pub(super) fn gen_brif(environment: &mut Environment<'_, '_>, relative_depth: u3
     let cond_value = environment.builder.build_int_compare(
         inkwell::IntPredicate::NE,
         cond.into_int_value(),
-        environment.inkwell_types.i32_type.const_int(0, false),
+        environment.inkwell_types.i32_type.const_zero(),
         "",
     );
 
